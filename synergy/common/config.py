@@ -55,7 +55,7 @@ wsgi_opts = [
 ]
 
 logger_opts = [
-    cfg.StrOpt("filename", default="/var/log/synergy/synergy.log",
+    cfg.StrOpt("filename", default="/tmp/synergy.log",
                required=True),
     cfg.StrOpt("level", default="INFO", required=False),
     cfg.IntOpt("maxBytes", default=1048576),
@@ -70,32 +70,12 @@ manager_opts = [
     cfg.IntOpt("rate", default=60)
 ]
 
-"""
-keystone_opts = [
-    cfg.StrOpt("admin_user", required=True),
-    cfg.StrOpt("admin_password", required=True),
-    cfg.StrOpt("admin_project_name", required=True),
-    cfg.StrOpt("auth_url", required=True)
-]
-
-mysql_opts = [
-    cfg.StrOpt("host", required=True),
-    cfg.StrOpt("user", default="synergy"),
-    cfg.StrOpt("password", required=True),
-    cfg.StrOpt("db", default="synergy", required=True),
-    cfg.IntOpt("pool_size", default="10", required=False)
-]
-"""
-
 cfg.CONF.register_opts(service_opts)
 cfg.CONF.register_opts(wsgi_opts, group="WSGI")
 cfg.CONF.register_opts(logger_opts, group="Logger")
-# cfg.CONF.register_opts(socket_opts)
-# cfg.CONF.register_opts(keystone_opts, group="Keystone")
-# cfg.CONF.register_opts(mysql_opts, group="MYSQL")
 
 
-def parse_args(args=None, usage=None, default_config_files=None):
+def parseArgs(args=None, usage=None, default_config_files=None):
     cfg.CONF(args=args,
              project='synergy',
              version="1.0",

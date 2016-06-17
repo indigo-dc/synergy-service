@@ -1,21 +1,22 @@
 import eventlet
 import json
+import logging
+import logging.handlers
+import os
 import sys
 
 from cgi import escape
 from cgi import parse_qs
 from pkg_resources import iter_entry_points
-from synergy.common import config
-from synergy.common import log as logging
-from synergy.common import serializer
-from synergy.common import service
-from synergy.common import wsgi
 
 try:
     from oslo_config import cfg
 except ImportError:
     from oslo.config import cfg
 
+from synergy.common import config
+from synergy.common import service
+from synergy.common import wsgi
 
 __author__ = "Lisa Zangrando"
 __email__ = "lisa.zangrando[AT]pd.infn.it"
@@ -35,100 +36,44 @@ either express or implied.
 See the License for the specific language governing
 permissions and limitations under the License."""
 
-
 CONF = cfg.CONF
 LOG = None
 MANAGER_ENTRY_POINT = "synergy.managers"  # used to discover Synergy managers
 
 
-class ManagerRPC(object):
+def setLogger(name):
+    """Configure the given logger with Synergy logging configuration.
 
-    def __init__(self, managers):
-        self.managers = managers
+    Note:
+    This function should only be used when entering Synergy by the main()
+    function. Otherwise you may run into issues due to logging to protected
+    files.
+    """
+    # create a logging format
+    formatter = logging.Formatter(CONF.Logger.formatter)
 
-    def list(self, ctx, **args):
-        result = []
+    log_dir = os.path.dirname(CONF.Logger.filename)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
 
-        for name, manager in self.managers.items():
-            result.append(name)
+    # Add the log message handler to the logger
+    handler = logging.handlers.RotatingFileHandler(
+        CONF.Logger.filename,
+        maxBytes=CONF.Logger.maxBytes,
+        backupCount=CONF.Logger.backupCount)
 
-        return result
+    handler.setFormatter(formatter)
 
-    def start(self, ctx, **args):
-        manager_name = args.get("arg").get("manager", None)
-        result = {}
+    # set logger level
+    logger = logging.getLogger(name)
+    logger.propagate = False
 
-        for name, manager in self.managers.items():
-            if manager.getStatus() == "ACTIVE" \
-               and (not manager_name or manager_name == name):
-                LOG.info("starting the %s manager" % (name))
-                try:
-                    # self.managers[name].start()
-                    self.managers[name].setStatus("RUNNING")
-                    LOG.info("%s manager started" % (name))
+    try:
+        logger.setLevel(cfg.CONF.Logger.level)
+    except ValueError:  # wrong level, we default to INFO
+        logger.setLevel(logging.INFO)
 
-                    result[name] = manager.getStatus()
-                except Exception as ex:
-                    self.managers[name].setStatus("ERROR")
-                    LOG.error("error occurred during the manager start-up %s"
-                              % (ex))
-
-                    result[name] = manager.getStatus()
-                    pass
-
-        return result
-
-    def stop(self, ctx, **args):
-        manager_name = args.get("arg").get("manager", None)
-        result = {}
-
-        for name, manager in self.managers.items():
-            if manager.getStatus() == "RUNNING" \
-               and (not manager_name or manager_name == name):
-                LOG.info("stopping the %s manager" % (name))
-                try:
-                    # self.managers[name].stop()
-                    self.managers[name].setStatus("ACTIVE")
-                    LOG.info("%s manager stopped" % (name))
-
-                    result[name] = manager.getStatus()
-                except Exception as ex:
-                    self.managers[name].setStatus("ERROR")
-                    LOG.error("error occurred during the manager stop %s"
-                              % (ex))
-
-                    result[name] = manager.getStatus()
-                    pass
-
-        return result
-
-    def execute(self, ctx, **args):
-        manager_name = args.get("arg").get("manager", None)
-        command = args.get("arg").get("command", None)
-        result = {}
-
-        if not manager_name:
-            result["error"] = "manager name not defined!"
-
-        if not command:
-            result["error"] = "command not defined!"
-
-        if manager_name in self.managers:
-            manager = self.managers[manager_name]
-            manager.execute(cmd=command)
-            result["command"] = "OK"
-
-        return result
-
-    def status(self, ctx, **args):
-        manager_name = args.get("arg").get("manager", None)
-        result = {}
-
-        for name, manager in self.managers.items():
-            if not manager_name or manager_name == name:
-                result[name] = manager.getStatus()
-
-        return result
+    logger.addHandler(handler)
 
 
 class Synergy(service.Service):
@@ -148,28 +93,15 @@ class Synergy(service.Service):
             LOG.info("loading manager %r", entry.name)
 
             try:
-                """
-                found = False
-
-                try:
-                    CONF.get(entry.name)
-                    found = True
-                except Exception as ex:
-                    LOG.info("missing section [%s] in synergy.conf for manager"
-                             " %r: using the default values"
-                             % (entry.name, entry.name))
-                """
-
                 CONF.register_opts(config.manager_opts, group=entry.name)
 
-                manager_conf = CONF.get(entry.name)
                 manager_class = entry.load()
 
                 manager_obj = manager_class(*args, **kwargs)
                 LOG.info("manager instance %r created!", entry.name)
 
-                manager_obj.setAutoStart(manager_conf.autostart)
-                manager_obj.setRate(manager_conf.rate)
+                manager_obj.setAutoStart(CONF.get(entry.name).autostart)
+                manager_obj.setRate(CONF.get(entry.name).rate)
 
                 self.managers[manager_obj.getName()] = manager_obj
 
@@ -179,7 +111,6 @@ class Synergy(service.Service):
 
                 LOG.error("manager %r instantiation error: %s"
                           % (entry.name, ex))
-                self.managers[manager_obj.getName()].setStatus("ERROR")
 
                 raise Exception("manager %r instantiation error: %s"
                                 % (entry.name, ex))
@@ -188,12 +119,15 @@ class Synergy(service.Service):
             manager.managers = self.managers
 
             try:
-                manager.setup()
-                manager.setStatus("ACTIVE")
+                LOG.info("initializing the %r manager" % (manager.getName()))
 
-                LOG.info("manager '%s' initialized!" % (manager.getName()))
+                manager.setup()
+
+                LOG.info("manager %r initialized!" % (manager.getName()))
             except Exception as ex:
-                LOG.error("manager '%s' instantiation error: %s" % (name, ex))
+                LOG.error("Exception has occured", exc_info=1)
+
+                LOG.error("manager %r instantiation error: %s" % (name, ex))
                 self.managers[manager.getName()].setStatus("ERROR")
                 raise ex
 
@@ -222,113 +156,135 @@ class Synergy(service.Service):
                     manager_list = parameters['manager']
                 else:
                     manager_list = [parameters['manager']]
+            else:
+                manager_list = self.managers.keys()
+        else:
+            manager_list = self.managers.keys()
 
-                for manager in manager_list:
-                    escape(manager)
+        for manager_name in manager_list:
+            manager_name = escape(manager_name)
 
-        for name, manager in self.managers.items():
-            if not manager_list or name in manager_list:
-                result[name] = manager.getStatus()
+            if manager_name in self.managers:
+                result[manager_name] = self.managers[manager_name].getStatus()
 
-        if manager_list and len(manager_list) == 1 and len(result) == 0:
+        if len(manager_list) == 1 and len(result) == 0:
             start_response("404 NOT FOUND", [("Content-Type", "text/plain")])
             return ["manager %r not found!" % manager_list[0]]
-        else:
-            start_response("200 OK", [("Content-Type", "text/html")])
-            return ["%s" % json.dumps(result)]
+
+        start_response("200 OK", [("Content-Type", "text/html")])
+        return ["%s" % json.dumps(result)]
 
     def executeCommand(self, environ, start_response):
         manager_name = None
         command = None
 
-        synergySerializer = serializer.SynergySerializer()
         query = environ.get("QUERY_STRING", None)
-        # LOG.info("QUERY_STRING %s" % query)
-        if query:
-            parameters = parse_qs(query)
 
-            if "manager" in parameters:
-                manager_name = escape(parameters['manager'][0])
+        if not query:
+            start_response("400 BAD REQUEST", [("Content-Type", "text/plain")])
+            return ["bad request"]
 
-            if "command" in parameters:
-                command_string = escape(parameters['command'][0])
-                command_string = command_string.replace("'", "\"")
-                entity = json.loads(command_string)
-                command = synergySerializer.deserialize_entity(context=None,
-                                                               entity=entity)
+        parameters = parse_qs(query)
+        LOG.debug("execute command: parameters=%s" % parameters)
 
-        if not query or not manager_name or not command:
-            start_response("404 NOT FOUND", [("Content-Type", "text/plain")])
-            return ["wrong query"]
+        if "manager" not in parameters:
+            start_response("400 BAD REQUEST", [("Content-Type", "text/plain")])
+            return ["manager not specified!"]
 
-        if manager_name in self.managers:
-            manager = self.managers[manager_name]
-            try:
-                manager.execute(cmd=command)
-                result = synergySerializer.serialize_entity(context=None,
-                                                            entity=command)
-                # LOG.info("command result %s" % result)
+        manager_name = escape(parameters['manager'][0])
 
-                start_response("200 OK", [("Content-Type", "text/html")])
-                return ["%s" % json.dumps(result)]
-            except Exception as ex:
-                LOG.info("executeCommand error: %s" % ex)
-                start_response("404 NOT FOUND",
-                               [("Content-Type", "text/plain")])
-                return ["error: %s" % ex]
-        else:
+        if manager_name not in self.managers:
             start_response("404 NOT FOUND", [("Content-Type", "text/plain")])
             return ["manager %r not found!" % manager_name]
+
+        if "command" not in parameters:
+            start_response("400 BAD REQUEST", [("Content-Type", "text/plain")])
+            return ["bad request"]
+
+        command = escape(parameters['command'][0])
+
+        if "args" in parameters:
+            manager_args = escape(parameters['args'][0])
+            manager_args = manager_args.replace("'", "\"")
+            manager_args = json.loads(manager_args)
+        else:
+            manager_args = {}
+
+        manager = self.managers[manager_name]
+
+        try:
+            result = manager.execute(command=command, **manager_args)
+
+            if not isinstance(result, dict):
+                try:
+                    result = result.toDict()
+                except Exception:
+                    result = result.__dict__
+
+            LOG.debug("execute command: result=%s" % result)
+
+            start_response("200 OK", [("Content-Type", "text/html")])
+            return ["%s" % json.dumps(result)]
+        except Exception as ex:
+            LOG.debug("execute command: error=%s" % ex)
+            start_response("500 INTERNAL SERVER ERROR",
+                           [("Content-Type", "text/plain")])
+            return ["error: %s" % ex]
 
     def startManager(self, environ, start_response):
         manager_list = None
         result = {}
 
-        # synergySerializer = serializer.SynergySerializer()
         query = environ.get("QUERY_STRING", None)
 
-        if query:
-            parameters = parse_qs(query)
+        if not query:
+            start_response("400 BAD REQUEST", [("Content-Type", "text/plain")])
+            return ["bad request"]
 
-            if "manager" in parameters:
-                if isinstance(parameters['manager'], (list, tuple)):
-                    manager_list = parameters['manager']
-                else:
-                    manager_list = [parameters['manager']]
+        parameters = parse_qs(query)
 
-                for manager in manager_list:
-                    escape(manager)
+        if "manager" not in parameters:
+            start_response("400 BAD REQUEST", [("Content-Type", "text/plain")])
+            return ["manager not specified!"]
 
-        for name, manager in self.managers.items():
-            if not manager_list or name in manager_list:
-                result[name] = {}
+        if isinstance(parameters['manager'], (list, tuple)):
+            manager_list = parameters['manager']
+        else:
+            manager_list = [parameters['manager']]
 
-                if manager.getStatus() == "ACTIVE":
-                    LOG.info("starting the %r manager" % (name))
-                    try:
-                        # self.managers[name].start()
-                        self.managers[name].setStatus("RUNNING")
-                        LOG.info("%r manager started!" % (name))
+        for manager_name in manager_list:
+            manager_name = escape(manager_name)
 
-                        result[name]["message"] = "started successfully"
-                    except Exception as ex:
-                        self.managers[name].setStatus("ERROR")
-                        LOG.error("error occurred during the manager start-up"
-                                  "%s" % (ex))
+            if manager_name not in self.managers:
+                continue
 
-                        result[name]["message"] = "ERROR: %s" % ex
-                        pass
-                else:
-                    result[name]["message"] = "WARN: already started"
+            result[manager_name] = {}
 
-                result[name]["status"] = manager.getStatus()
+            manager = self.managers[manager_name]
 
-        if manager_list and len(manager_list) == 1 and len(result) == 0:
+            if manager.getStatus() == "ACTIVE":
+                LOG.info("starting the %r manager" % (manager_name))
+
+                manager.resume()
+
+                LOG.info("%r manager started! (rate=%s min)"
+                         % (manager_name, manager.getRate()))
+
+                result[manager_name]["status"] = "RUNNING"
+                result[manager_name]["message"] = "started successfully"
+            elif manager.getStatus() == "RUNNING":
+                result[manager_name]["status"] = "RUNNING"
+                result[manager_name]["message"] = "WARN: already started"
+            elif manager.getStatus() == "ERROR":
+                result[manager_name]["status"] = "ERROR"
+                result[manager_name]["message"] = "wrong state"
+
+        if len(manager_list) == 1 and len(result) == 0:
             start_response("404 NOT FOUND", [("Content-Type", "text/plain")])
             return ["manager %r not found!" % manager_list[0]]
-        else:
-            start_response("200 OK", [("Content-Type", "text/html")])
-            return ["%s" % json.dumps(result)]
+
+        start_response("200 OK", [("Content-Type", "text/html")])
+        return ["%s" % json.dumps(result)]
 
     def stopManager(self, environ, start_response):
         manager_list = None
@@ -336,60 +292,65 @@ class Synergy(service.Service):
 
         query = environ.get("QUERY_STRING", None)
 
-        if query:
-            parameters = parse_qs(query)
+        if not query:
+            start_response("400 BAD REQUEST", [("Content-Type", "text/plain")])
+            return ["bad request"]
 
-            if "manager" in parameters:
-                if isinstance(parameters['manager'], (list, tuple)):
-                    manager_list = parameters['manager']
-                else:
-                    manager_list = [parameters['manager']]
+        parameters = parse_qs(query)
 
-                for manager in manager_list:
-                    escape(manager)
+        if "manager" not in parameters:
+            start_response("400 BAD REQUEST", [("Content-Type", "text/plain")])
+            return ["manager not specified!"]
 
-        for name, manager in self.managers.items():
-            if not manager_list or name in manager_list:
-                result[name] = {}
+        if isinstance(parameters['manager'], (list, tuple)):
+            manager_list = parameters['manager']
+        else:
+            manager_list = [parameters['manager']]
 
-                if manager.getStatus() == "RUNNING":
-                    LOG.info("stopping the %r manager" % (name))
-                    try:
-                        # self.managers[name].stop()
-                        self.managers[name].setStatus("ACTIVE")
-                        LOG.info("%r manager stopped!" % (name))
+        for manager_name in manager_list:
+            manager_name = escape(manager_name)
 
-                        result[name]["message"] = "stopped successfully"
-                    except Exception as ex:
-                        self.managers[name].setStatus("ERROR")
-                        LOG.error("error occurred during the manager stop: %s"
-                                  % (ex))
+            if manager_name not in self.managers:
+                continue
 
-                        result[name]["message"] = "ERROR: %s" % ex
-                        pass
-                else:
-                    result[name]["message"] = "WARN: already stopped"
+            result[manager_name] = {}
 
-                result[name]["status"] = manager.getStatus()
+            manager = self.managers[manager_name]
 
-        if manager_list and len(manager_list) == 1 and len(result) == 0:
+            if manager.getStatus() == "RUNNING":
+                LOG.info("stopping the %r manager" % (manager_name))
+
+                manager.pause()
+
+                LOG.info("%r manager stopped!" % (manager_name))
+
+                result[manager_name]["status"] = "ACTIVE"
+                result[manager_name]["message"] = "stopped successfully"
+            elif manager.getStatus() == "ACTIVE":
+                result[manager_name]["status"] = "ACTIVE"
+                result[manager_name]["message"] = "WARN: already stopped"
+            elif manager.getStatus() == "ERROR":
+                result[manager_name]["status"] = "ERROR"
+                result[manager_name]["message"] = "wrong state"
+
+        if len(manager_list) == 1 and len(result) == 0:
             start_response("404 NOT FOUND", [("Content-Type", "text/plain")])
             return ["manager %r not found!" % manager_list[0]]
-        else:
-            start_response("200 OK", [("Content-Type", "text/html")])
-            return ["%s" % json.dumps(result)]
+
+        start_response("200 OK", [("Content-Type", "text/html")])
+        return ["%s" % json.dumps(result)]
 
     def start(self):
         self.model_disconnected = False
 
         for name, manager in self.managers.items():
-            if manager.getStatus() != "ERROR" and manager.isAutoStart():
+            if manager.getStatus() != "ERROR":
                 try:
                     LOG.info("starting the %r manager" % (name))
                     manager.start()
-                    manager.setStatus("RUNNING")
-                    LOG.info("%r manager started! (rate=%s min)"
-                             % (name, manager.getRate()))
+
+                    LOG.info("%r manager started! (rate=%s min, status=%s)"
+                             % (name, manager.getRate(), manager.getStatus()))
                 except Exception as ex:
                     LOG.error("error occurred during the manager start %s"
                               % (ex))
@@ -435,6 +396,8 @@ class Synergy(service.Service):
                 # manager.join()
                 # LOG.info("%s manager destroyed" % (name))
             except Exception as ex:
+                LOG.error("Exception has occured", exc_info=1)
+
                 manager.setStatus("ERROR")
                 LOG.error("error occurred during the manager destruction: %s"
                           % ex)
@@ -450,13 +413,15 @@ def main():
         eventlet.monkey_patch(os=False)
 
         # the configuration will be into the cfg.CONF global data structure
-        config.parse_args(args=sys.argv[1:],
-                          default_config_files=["/etc/synergy/synergy.conf"])
+        config.parseArgs(args=sys.argv[1:],
+                         default_config_files=["/etc/synergy/synergy.conf"])
 
         if not cfg.CONF.config_file:
             sys.exit("ERROR: Unable to find configuration file via the "
                      "default search paths (~/.synergy/, ~/, /etc/synergy/"
                      ", /etc/) and the '--config-file' option!")
+
+        setLogger(name="synergy")
 
         global LOG
         # LOG = logging.getLogger(None)
@@ -468,6 +433,11 @@ def main():
         # os.setsid()
 
         server = Synergy()
+
+        # Configure logging for managers
+        for manager in server.managers.values():
+            setLogger(manager.__module__)
+
         server.start()
 
         LOG.info("Synergy started")
