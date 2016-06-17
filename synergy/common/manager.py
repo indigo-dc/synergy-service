@@ -1,6 +1,6 @@
 from threading import Condition
-from threading import Timer
-
+from threading import Event
+from threading import Thread
 
 __author__ = "Lisa Zangrando"
 __email__ = "lisa.zangrando[AT]pd.infn.it"
@@ -21,27 +21,29 @@ See the License for the specific language governing
 permissions and limitations under the License."""
 
 
-class Manager(object):
+class Manager(Thread):
 
     def __init__(self, name):
+        super(Manager, self).__init__()
+        self.setDaemon(True)
+        self.stop_event = Event()
         self.config_opts = []
         self.condition = Condition()
         self.name = name
         self.status = "CREATED"
         self.autostart = False
         self.rate = -1
-        self.timer = None
-        self.is_running = False
+        self.paused = True  # start out paused
         self.managers = {}
 
     def execute(self, command, *args, **kargs):
-        pass
+        raise NotImplementedError
 
     def task(self):
-        pass
+        raise NotImplementedError
 
     def doOnEvent(self, event_type, *args, **kargs):
-        pass
+        raise NotImplementedError
 
     def getManagers(self):
         return self.managers
@@ -70,13 +72,13 @@ class Manager(object):
 
     def setAutoStart(self, autostart):
         self.autostart = autostart
+        self.paused = not self.autostart
 
     def getRate(self):
         return self.rate
 
     def setRate(self, rate):
-        if rate and rate > 0:
-            self.rate = rate
+        self.rate = rate
 
     def setup(self):
         """Manager initialization
@@ -86,10 +88,10 @@ class Manager(object):
         is created.
         Child classes should override this method.
         """
-        pass
+        raise NotImplementedError
 
     def destroy(self):
-        pass
+        raise NotImplementedError
 
     def getStatus(self):
         return self.status
@@ -99,49 +101,36 @@ class Manager(object):
             self.status = status
 
             self.condition.notifyAll()
-            # if self.status == "RUNNING":
-            #     self.__task()
-
-    """
-    def __task(self):
-        if self.rate:
-            if self.status == "RUNNING":
-                self.task()
-                self.timer = Timer(self.rate, self.__task)
-                self.timer.start()
-            else:
-                self.timer.cancel()
-    """
-
-    def start(self):
-        if not self.rate:
-            return
-
-        if not self.is_running and self.rate > 0:
-            self.timer = Timer(self.rate * 60, self._run)
-            self.timer.start()
-            self.is_running = True
-
-    def _run(self):
-        self.is_running = False
-        self.start()
-
-        if self.status == "RUNNING":
-            self.task()
 
     def stop(self):
-        self.timer.cancel()
-        self.is_running = False
+        if self.isAlive():
+            # set event to signal thread to terminate
+            self.stop_event.set()
+            self.resume()
+            # block calling thread until thread really has terminated
+            self.join()
+
+    def pause(self):
+        with self.condition:
+            self.paused = True
+            self.condition.notifyAll()
+
+    def resume(self):
+        with self.condition:
+            self.paused = False
+            self.condition.notifyAll()
 
     def run(self):
-        if not self.rate:
-            return
-
-        with self.condition:
-            while self.status != "DESTROYED" and self.status != "ERROR":
-                if self.status == "RUNNING":
-                    self.task()
-
-                    self.condition.wait(self.rate)
-                else:
+        while not self.stop_event.isSet():
+            with self.condition:
+                if self.paused:
+                    self.status = "ACTIVE"
                     self.condition.wait()
+                else:
+                    self.status = "RUNNING"
+
+                    try:
+                        self.task()
+                        self.condition.wait(self.rate * 60)
+                    except Exception as ex:
+                        print("task %r: %s" % (self.name, ex))

@@ -1,27 +1,27 @@
 %{!?python_sitelib: %global python_sitelib %(%{__python} -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())")}
 
-Name:           python-synergy-service
-Version:        0.1
-Release:        1%{?dist}
-Summary:        Synergy service
+Name:             python-synergy-service
+Version:          1.0.0
+Release:          1%{?dist}
+Summary:          Synergy service
 
-License:        ASL 2.0
-URL:            https://launchpad.net/synergy-service
-Source0:        https://launchpad.net/synergy-service/%{name}-%{version}.tar.bz2
+License:          ASL 2.0
+URL:              https://launchpad.net/synergy-service
+Source0:          https://launchpad.net/synergy-service/%{name}-%{version}.tar.bz2
 
-BuildArch:      noarch
-BuildRequires:  systemd
-BuildRequires:  python-devel
-BuildRequires:  python-setuptools
-Requires(pre):  shadow-utils
-Requires(post): systemd
-Requires(preun): systemd
+BuildArch:        noarch
+BuildRequires:    systemd
+BuildRequires:    python-devel
+BuildRequires:    python-setuptools
+Requires(pre):    shadow-utils
+Requires(post):   systemd
+Requires(preun):  systemd
 Requires(postun): systemd
-Requires:       python-eventlet
-Requires:       python-oslo-config
-Requires:       python-oslo-messaging
-Requires:       python-oslo-log
-Requires:       python-dateutil
+Requires:         python-eventlet
+Requires:         python-oslo-config
+Requires:         python-oslo-messaging
+Requires:         python-oslo-log
+Requires:         python-dateutil
 
 
 %description
@@ -59,6 +59,7 @@ install -d -m0755                           %{buildroot}%{_localstatedir}/lock/s
 %{python_sitelib}/*
 %config(noreplace) %{_sysconfdir}/synergy/synergy.conf
 %{_bindir}/synergy
+%{_bindir}/synergy-service
 %{_unitdir}/synergy.service
 %defattr(-, synergy, root, -)
 %{_localstatedir}/lock/synergy/
@@ -84,7 +85,7 @@ exit 0
 
 
 %postun
-%systemd_postun_with_restart synergy.service 
+%systemd_postun_with_restart synergy.service
 if [ "$1" = 0 ]; then
     userdel -r synergy
     groupdel synergy
@@ -92,5 +93,11 @@ if [ "$1" = 0 ]; then
 fi
 
 %changelog
+* Fri Jun 17 2016 Vincent Llorens <vincent.llorens@cc.in2p3.fr> - 1.0.0-1
+- First public release of Synergy. Full set of functionalities.
+
+* Fri Apr 29 2016 Vincent Llorens <vincent.llorens@cc.in2p3.fr> - 0.2-2
+- Working release with minimum set of functionalities
+
 * Wed Jan 20 2016 Vincent Llorens <vincent.llorens@cc.in2p3.fr>
 - WIP RPM release

@@ -1,3 +1,4 @@
+import logging
 import os
 import signal
 import sys
@@ -6,8 +7,6 @@ try:
     from oslo_config import cfg
 except ImportError:
     from oslo.config import cfg
-
-from synergy.common import log as logging
 
 
 __author__ = "Lisa Zangrando"
@@ -40,6 +39,8 @@ class Service(object):
         signal.signal(signal.SIGINT, self.sigterm_handler)
 
     def sigterm_handler(self, signum, frame):
+        LOG.debug("Signal handler called with signal=%s" % signum)
+
         global SIGTERM_SENT
         if not SIGTERM_SENT:
             LOG.info("Shutting down %s" % self.name)
@@ -53,13 +54,13 @@ class Service(object):
         return self.name
 
     def start(self):
-        pass
+        raise NotImplementedError
 
     def stop(self):
-        pass
+        raise NotImplementedError
 
     def wait(self):
-        pass
+        raise NotImplementedError
 
     def restart(self):
         # Reload config files and restart service
