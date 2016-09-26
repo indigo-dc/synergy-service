@@ -1,7 +1,7 @@
 %{!?python_sitelib: %global python_sitelib %(%{__python} -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())")}
 
 Name:             python-synergy-service
-Version:          1.0.1
+Version:          1.1.0
 Release:          1%{?dist}
 Summary:          Synergy service
 
@@ -17,11 +17,10 @@ Requires(pre):    shadow-utils
 Requires(post):   systemd
 Requires(preun):  systemd
 Requires(postun): systemd
-Requires:         python-eventlet
-Requires:         python-oslo-config
-Requires:         python-oslo-messaging
-Requires:         python-oslo-log
-Requires:         python-dateutil
+Requires:         python-eventlet >= 0.17
+Requires:         python2-oslo-config >= 2.4
+Requires:         python-pbr >= 1.8
+Requires:         python-dateutil >= 2.4
 
 
 %description
@@ -87,12 +86,16 @@ exit 0
 %postun
 %systemd_postun_with_restart synergy.service
 if [ "$1" = 0 ]; then
-    userdel -r synergy
-    groupdel synergy
-    true
+    userdel -r synergy || true
+    groupdel synergy || true
 fi
 
 %changelog
+* Wed Sep 21 2016 Ervin Konomi <ervin.konomi@pd.infn.it - 1.1.0-1
+- Improve Synergy serialization capabilities
+- Streamline the packaging process
+- Use dependency pinning for both CentOS and Ubuntu packaging
+
 * Tue Jul 26 2016 Vincent Llorens <vincent.llorens@cc.in2p3.fr - 1.0.1-1
 - Fix broken links in README
 
