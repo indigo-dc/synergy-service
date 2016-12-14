@@ -1,7 +1,7 @@
 %{!?python_sitelib: %global python_sitelib %(%{__python} -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())")}
 
 Name:             python-synergy-service
-Version:          1.1.0
+Version:          1.3.0
 Release:          1%{?dist}
 Summary:          Synergy service
 
@@ -17,10 +17,11 @@ Requires(pre):    shadow-utils
 Requires(post):   systemd
 Requires(preun):  systemd
 Requires(postun): systemd
-Requires:         python-eventlet >= 0.17
-Requires:         python2-oslo-config >= 2.4
-Requires:         python-pbr >= 1.8
-Requires:         python-dateutil >= 2.4
+Requires:         python2-eventlet
+Requires:         python2-oslo-config
+Requires:         python-pbr
+Requires:         python-dateutil
+Requires:         python-requests
 
 
 %description
@@ -86,11 +87,40 @@ exit 0
 %postun
 %systemd_postun_with_restart synergy.service
 if [ "$1" = 0 ]; then
-    userdel -r synergy || true
-    groupdel synergy || true
+    userdel -r synergy 2> /dev/null || true
+    groupdel synergy 2> /dev/null || true
 fi
 
 %changelog
+* Tue Dec 06 2016 Vincent Llorens <vincent.llorens@cc.in2p3.fr> - 1.3.0-1
+- Replaces uuid.uuid4 with uuidutils.generate_uuid
+- [packaging] make docker aware of PKG_VERSION
+- Added support for OpenStack DOMAIN to shell.py
+- Update changelogs and system package versions
+- Clean up oslo imports
+- Update the Sphinx documentation
+- fix packaging with docker and its documentation
+- Distribute tabulate as part of Synergy
+- Remove versions for required packages
+- fix missing "requests" from the requirements
+- Updated coverage configuration file
+- fix docker packaging for CentOS
+- fix wrong version of eventlet
+- fix docs for packaging with Ubuntu
+- fix to get the synergy version when packaging
+- fix required packages when packaging
+
+* Wed Nov 09 2016 Vincent Llorens <vincent.llorens@cc.in2p3.fr> - 1.2.0-1
+- use pbr fully for easier package building
+- RPM: don't output errors on uninstallation
+- Fix conf for AMQP virtual host
+- Added unit tests
+- Fixed destroy() method
+- Fixed serializer
+- Fixed logging for managers
+- fix eventlet and dateutil required versions
+- Fix requirement version pinning
+
 * Wed Sep 21 2016 Ervin Konomi <ervin.konomi@pd.infn.it - 1.1.0-1
 - Improve Synergy serialization capabilities
 - Streamline the packaging process

@@ -6,12 +6,14 @@ PKG_DIR=/tmp/synergy-service
 function copy_source() {
     cd /home/pkger
     cp -r $PKG_DIR python-synergy-service
-    rm -r python-synergy-service/{.tox,.testrepository,build,dist} || true
+    rm -r python-synergy-service/{.eggs,.tox,.testrepository,build,dist} || true
 }
 
 function get_version() {
-    local file=/home/pkger/python-synergy-service/setup.cfg
-    export PKG_VERSION=$(grep -e "version = " $file | sed -r "s/version = ()/\1/")
+    if [[ -z $PKG_VERSION ]]; then
+        cd $PKG_DIR
+        export PKG_VERSION=$(git tag -l "*.*.*" | sort -V | tail -1)
+    fi
 }
 
 function setup() {

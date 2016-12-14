@@ -9,10 +9,7 @@ from cgi import escape
 from cgi import parse_qs
 from pkg_resources import iter_entry_points
 
-try:
-    from oslo_config import cfg
-except ImportError:
-    from oslo.config import cfg
+from oslo_config import cfg
 
 from synergy.common import config
 from synergy.common.manager import Manager
@@ -91,6 +88,7 @@ class Synergy(Service):
         super(Synergy, self).__init__("Synergy")
 
         self.managers = {}
+        self.wsgi_server = None
 
         for entry in iter_entry_points(MANAGER_ENTRY_POINT):
             LOG.info("loading manager %r", entry.name)
@@ -104,6 +102,9 @@ class Synergy(Service):
                 manager_obj.setName(entry.name)
                 manager_obj.setAutoStart(CONF.get(entry.name).autostart)
                 manager_obj.setRate(CONF.get(entry.name).rate)
+
+                # Configure logging for manager
+                setLogger(manager_obj.__module__)
 
                 self.managers[manager_obj.getName()] = manager_obj
 
@@ -442,11 +443,6 @@ def main():
         # os.setsid()
 
         server = Synergy()
-
-        # Configure logging for managers
-        for manager in server.managers.values():
-            setLogger(manager.__module__)
-
         server.start()
 
         LOG.info("Synergy started")
