@@ -4,7 +4,9 @@ RUN yum install -y centos-release-openstack-liberty \
                    rpm-build \
                    python-devel \
                    python-setuptools \
+                   git-core \
     && yum update -y
+RUN yum install -y python-pbr  # Needs centos-release-openstack-* to be installed first
 RUN mkdir /tmp/synergy-service
 RUN useradd -m -p pkger pkger
 USER pkger
