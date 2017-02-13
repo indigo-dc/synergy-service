@@ -1006,7 +1006,7 @@ def _format_table(fmt, headers, rows, colwidths, colaligns):
     return "\n".join(lines)
 
 
-def _main():
+def _main():  # pragma: no cover
     """\
     Usage: tabulate [options] [FILE ...]
 
