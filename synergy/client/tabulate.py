@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pragma: no cover
 
 """Pretty-print tabular data."""
 
@@ -1006,7 +1007,7 @@ def _format_table(fmt, headers, rows, colwidths, colaligns):
     return "\n".join(lines)
 
 
-def _main():  # pragma: no cover
+def _main():
     """\
     Usage: tabulate [options] [FILE ...]
 
