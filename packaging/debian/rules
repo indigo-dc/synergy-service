@@ -21,10 +21,13 @@ export PYBUILD_NAME=python-synergy-service
 %:
 	dh $@ --with python2,systemd --buildsystem=pybuild
 
-override_dh_installinit:
-	dh_installinit --name synergy
-
 override_dh_auto_test:
+
+override_dh_systemd_start:
+	dh_systemd_start --no-start --no-restart-on-upgrade
+
+override_dh_systemd_enable:
+	dh_systemd_enable --no-enable
 
 # debmake generated override targets
 # This is example for Cmake (See http://bugs.debian.org/641051 )

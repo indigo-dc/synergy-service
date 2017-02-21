@@ -49,7 +49,6 @@ install -D -m0644 config/synergy.conf       %{buildroot}%{_sysconfdir}/synergy/s
 install -D -m0644 scripts/synergy.service   %{buildroot}%{_unitdir}/synergy.service
 install -d -m0700                           %{buildroot}%{_localstatedir}/lib/synergy
 install -d -m0755                           %{buildroot}%{_localstatedir}/log/synergy
-touch                                       %{buildroot}%{_localstatedir}/log/synergy/synergy.log
 install -d -m0755                           %{buildroot}%{_localstatedir}/run/synergy
 install -d -m0755                           %{buildroot}%{_localstatedir}/lock/synergy
 
@@ -64,7 +63,6 @@ install -d -m0755                           %{buildroot}%{_localstatedir}/lock/s
 %defattr(-, synergy, root, -)
 %{_localstatedir}/lock/synergy/
 %{_localstatedir}/log/synergy/
-%{_localstatedir}/log/synergy/synergy.log
 %{_localstatedir}/run/synergy/
 %attr(700, synergy, root) %{_localstatedir}/lib/synergy/
 
@@ -76,16 +74,11 @@ getent passwd synergy > /dev/null || \
 exit 0
 
 
-%post
-%systemd_post synergy.service
-
-
 %preun
 %systemd_preun synergy.service
 
 
 %postun
-%systemd_postun_with_restart synergy.service
 if [ "$1" = 0 ]; then
     userdel -r synergy 2> /dev/null || true
     groupdel synergy 2> /dev/null || true
