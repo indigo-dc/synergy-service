@@ -2,12 +2,16 @@ import errno
 import eventlet
 import logging
 import os
+import re
 import socket
 import ssl
 import time
 
 from eventlet import greenio as eventlet_greenio
 from eventlet import wsgi as eventlet_wsgi
+
+from sys import exc_info
+from traceback import format_tb
 
 
 __author__ = "Lisa Zangrando"
@@ -29,6 +33,78 @@ See the License for the specific language governing
 permissions and limitations under the License."""
 
 LOG = logging.getLogger(__name__)
+
+
+class Dispatcher(object):
+    """Dispatcher
+
+    The main WSGI application. Dispatch the current request to
+    the functions from above and store the regular expression
+    captures in the WSGI environment as `myapp.url_args` so that
+    the functions from above can access the url placeholders.
+    If nothing matches call the `not_found` function.
+    """
+
+    def __init__(self):
+        self.actions = {}
+
+    def register(self, action, callback):
+        self.actions[action] = callback
+
+    def unregister(self, action):
+        del self.actions[action]
+
+    def __call__(self, environ, start_response):
+        """Call the application can catch exceptions."""
+        appiter = None
+        # just call the application and send the output back unchanged
+        # but catch exceptions
+
+        path = environ.get('PATH_INFO', '').lstrip('/')
+        application = None
+
+        for regex, callback in self.actions.items():
+            match = re.search(regex, path)
+            if match is not None:
+                environ['myapp.url_args'] = match.groups()
+                application = callback
+                break
+
+        if application is not None:
+            try:
+                self.appiter = callback(environ, start_response)
+                for item in self.appiter:
+                    yield item
+            # if an exception occours we get the exception information and
+            # prepare a traceback we can render
+            except Exception:
+                e_type, e_value, tb = exc_info()
+                traceback = ['Traceback (most recent call last):']
+                traceback += format_tb(tb)
+                traceback.append('%s: %s' % (e_type.__name__, e_value))
+                # we might have not a stated response by now.
+                # Try to start one with the status
+                # code 500 or ignore an raised exception if the application
+                # already started one.
+                try:
+                    start_response("500 INTERNAL SERVER ERROR",
+                                   [('Content-Type', 'text/plain')])
+                except Exception:
+                    pass
+                yield '\n'.join(traceback)
+
+            # wsgi applications might have a close function.
+            # If it exists it *must* be called.
+            if hasattr(appiter, 'close'):
+                self.appiter.close()
+        else:
+            """Called if no applations matches."""
+            try:
+                start_response("404 NOT FOUND",
+                               [('Content-Type', 'text/plain')])
+            except Exception:
+                pass
+            yield "Not Found"
 
 
 class WSGILog(object):
