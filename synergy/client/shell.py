@@ -1,10 +1,12 @@
 import os
 import os.path
-import requests
 import sys
 
 from argparse import ArgumentParser
 from pkg_resources import iter_entry_points
+from requests.exceptions import ConnectionError
+from requests.exceptions import HTTPError
+from requests.exceptions import RequestException
 from synergy.client import keystone_v3
 
 __author__ = "Lisa Zangrando"
@@ -124,64 +126,67 @@ def main():
         os_cacert = args.os_cacert
         bypass_url = args.bypass_url
         command_name = args.command_name
+        token = None
+
+        if not os_username:
+            raise ValueError("'os-username' not defined!")
+
+        if not os_password:
+            raise ValueError("'os-password' not defined!")
+
+        if not os_project_name:
+            raise ValueError("'os-project-name' not defined!")
+
+        if not os_auth_url:
+            raise ValueError("'os-auth-url' not defined!")
+
+        if not os_user_domain_name:
+            os_user_domain_name = "default"
+
+        if not os_project_domain_name:
+            os_project_domain_name = "default"
+
+        client = keystone_v3.KeystoneClient(
+            auth_url=os_auth_url,
+            username=os_username,
+            password=os_password,
+            ca_cert=os_cacert,
+            user_domain_id=os_user_domain_id,
+            user_domain_name=os_user_domain_name,
+            project_name=os_project_name,
+            project_domain_id=os_project_domain_id,
+            project_domain_name=os_project_domain_name)
+
+        token = client.authenticate()
 
         if bypass_url:
             synergy_url = bypass_url
         else:
-            if not os_username:
-                raise Exception("'os-username' not defined!")
-
-            if not os_password:
-                raise Exception("'os-password' not defined!")
-
-            if not os_project_name:
-                raise Exception("'os-project-name' not defined!")
-
-            if not os_auth_url:
-                raise Exception("'os-auth-url' not defined!")
-
-            if not os_user_domain_name:
-                os_user_domain_name = "default"
-
-            if not os_project_domain_name:
-                os_project_domain_name = "default"
-
-            client = keystone_v3.KeystoneClient(
-                auth_url=os_auth_url,
-                username=os_username,
-                password=os_password,
-                ca_cert=os_cacert,
-                user_domain_id=os_user_domain_id,
-                user_domain_name=os_user_domain_name,
-                project_name=os_project_name,
-                project_domain_id=os_project_domain_id,
-                project_domain_name=os_project_domain_name)
-
-            client.authenticate()
-
-            synergy_service = client.getService(name="synergy")
-
-            if not synergy_service:
-                print("Synergy service not found into the Keystone catalog!")
-                sys.exit(1)
-
-            synergy_endpoint = client.getEndpoint(
-                service_id=synergy_service["id"])
-
+            synergy_endpoint = client.getEndpoint("synergy")
             synergy_url = synergy_endpoint["url"]
 
         if command_name not in commands:
-            print("command %r not found!" % command_name)
+            print("Command %r not found!" % command_name)
 
+        commands[command_name].setToken(token)
         commands[command_name].execute(synergy_url, args)
-    except KeyboardInterrupt as e:
+    except KeyboardInterrupt:
         print("Shutting down synergyclient")
         sys.exit(1)
-    except requests.exceptions.HTTPError as e:
-        print("HTTPError: %s" % e.response._content)
+    except ConnectionError as ex:
+        print("Failed to establish a new connection to %s" % synergy_url)
         sys.exit(1)
-    except Exception as e:
-        print("ERROR: %s" % e)
+    except HTTPError as ex:
+        if ex.response._content:
+            print("%s" % ex.response._content)
+        else:
+            print("%s" % ex.message)
+        sys.exit(1)
+    except RequestException as ex:
+        print("%s" % ex.response._content)
+        sys.exit(1)
+    except Exception as ex:
+        print(ex)
         sys.exit(1)
 
 
